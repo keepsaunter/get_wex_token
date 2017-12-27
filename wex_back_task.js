@@ -75,9 +75,9 @@ function requestAccessToken(){
 function timeGetAccessToken(){
 	if(timer_get){
 		clearInterval(timer_get);
-	}else{
-		requestAccessToken();
 	}
+	requestAccessToken();
+	
 	timer_get = setInterval(function(){
 		requestAccessToken();
 	}, (expires_in - 8) * 1000);
