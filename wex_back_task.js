@@ -3,8 +3,9 @@ var http = require('http');
 var fs = require('fs');
 var url = require('url');
 
-var app_id = "", app_secret="", server_port=124, server_token="", expires_in=7200, has_error=false, timer_get='';
+var app_id = "", app_secret="", server_port="", server_token="", expires_in=7200, has_error=false, timer_get='';
 
+//读取配置文件
 function getConfig(callback){
 	fs.readFile('./wex_official_config.json', function(err, buffer){
 		if(err){
@@ -21,66 +22,70 @@ function getConfig(callback){
 			server_port = config_data.server_port;
 			server_token = config_data.server_token;
 
-			callback(app_id, app_secret);
+			if(Array.isArray(callback)){
+				callback.forEach(function(val){
+					val();
+				})
+			}else{
+				callback();
+			}
 		}
 	})
 }
-function requestAccessToken(app_id, app_secret){
+//用https请求微信服务器
+function requestAccessToken(){
 	var get_url = "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid="+app_id+"&secret="+app_secret;
 	
 	https.get(get_url, (res) => {
 		res.on('data', (chunk) => {
 			var remote_expires_in = 0;
+			var get_data = JSON.parse(chunk);
 			try{
-				var remote_expires_in = JSON.parse(chunk).expires_in;
+				var remote_expires_in = get_data.expires_in;
 			}catch(e){
 				has_error = true;
 				return;
 			}
 			if(expires_in < remote_expires_in-5 || expires_in > remote_expires_in+5){
-				var temp_buffer = new Buffer(JSON.stringify({
-					appId: app_id,
-					appSecret: app_secret,
-					expires_in: remote_expires_in,
-					server_port: server_port,
-					server_token: server_token
-				}));
 				expires_in = remote_expires_in;
-				fs.writeFile('./wex_official_config.json', temp_buffer, {flag: 'w'}, function (err) {
-				   if(err) {
-				   		console.log('写入配置文件失败！');
-				    	console.error(err);
-				    	has_error = true;
-				    	return;
-				    } else {
-				    	// console.log('写入配置文件成功！');
-				    	timeGetAccessToken(remote_expires_in);
-				    }
-				});
+				updateFile('./wex_official_config.json', {expires_in: remote_expires_in}, function(err){
+					if(err){
+						console.log("写入配置文件失败！");
+						console.error(err);
+						has_error = true;
+					}else{
+						// console.log('写入配置文件成功！');
+					}
+				})
 			}
-			fs.writeFile('./wex_auth_data.json', chunk, {flag: 'w'}, function (err) {
-			   if(err) {
+			updateFile('./wex_auth_data.json', get_data, function(err){
+				if(err) {
 			   		console.log('写入access_token失败！');
 			    	console.error(err);
 			    	has_error = true;
-			    	return;
 			    } else {
 			    	// console.log('写入access_token成功！');
 			    }
-			});
+			})
 		})
 	});
 }
-function timeGetAccessToken(time_interval){
-	if(!timer_get){
+
+//设置定时器
+function timeGetAccessToken(){
+	if(timer_get){
 		clearInterval(timer_get);
+	}else{
+		requestAccessToken();
 	}
 	timer_get = setInterval(function(){
-		getConfig(requestAccessToken);
-	}, time_interval * 1000);
+		requestAccessToken();
+	}, (expires_in - 8) * 1000);
 }
-timeGetAccessToken(expires_in);
+
+//创建node服务用于强制刷新token
 function createServer(){
+	var run_port = process.env.WEX_DATA_PORTf || server_port;	//用于运行时设置端口号
 	var server = http.createServer(function(req, res){
 		var req_query = url.parse(req.url).query;
 		if(req_query){
@@ -93,8 +98,30 @@ function createServer(){
 		}else{
 			res.end('<h1 style="position:absolute;color:red;text-align:center;padding-top:18%;top:0;bottom:0;left:0;right:0;">非法的请求!</h1>');
 		}
-	}).listen(server_port, function(){
-		console.log("wex_back_task server runing port "+server_port+"！");
+	}).listen(run_port, function(){
+		console.log("wex_back_task server runing port "+run_port+"！");
 	});
 }
-createServer();
+
+function updateFile(file_path, data, callback){
+	fs.readFile(file_path, function(err, buffer){
+		if(err){
+			console.log("读取文件"+file_path+"失败！");
+			callback(err);
+		}else{
+			// console.log("读取配置成功！");
+			if(buffer.length){
+				var file_data = JSON.parse(buffer);
+				Object.assign(file_data, data);
+			}else{
+				file_data = data;
+			}
+
+			fs.writeFile(file_path, new Buffer(JSON.stringify(file_data)), {flag: 'w'}, function (err) {
+			   callback(err)
+			});
+		}
+	})
+}
+
+getConfig([timeGetAccessToken, createServer]);
