@@ -3,7 +3,7 @@ var http = require('http');
 var fs = require('fs');
 var url = require('url');
 
-var app_id = "", app_secret="", server_port="", server_token="", expires_in=7200, has_error=false, timer_get='';
+var app_id = "", app_secret="", server_port="", log_file_byte="",server_token="", expires_in=7200, has_error=false, timer_get='', notify_urls=[], set_accessToken_token='';
 
 //读取配置文件
 function getConfig(callback){
@@ -19,8 +19,11 @@ function getConfig(callback){
 			app_id = config_data.appId;
 			app_secret = config_data.appSecret;
 			expires_in = config_data.expires_in;
+			log_file_byte = config_data.log_file_byte;
 			server_port = config_data.server_port;
 			server_token = config_data.server_token;
+			notify_urls = config_data.notify_urls;
+			set_accessToken_token = config_data.set_accessToken_token;
 
 			if(Array.isArray(callback)){
 				callback.forEach(function(val){
@@ -65,6 +68,7 @@ function requestAccessToken(){
 			    	has_error = true;
 			    } else {
 			    	// console.log('写入access_token成功！');
+			    	notifyOther(get_data.access_token);
 			    }
 			})
 		})
@@ -87,22 +91,69 @@ function timeGetAccessToken(){
 function createServer(){
 	var run_port = process.env.WEX_DATA_PORTf || server_port;	//用于运行时设置端口号
 	var server = http.createServer(function(req, res){
-		var req_query = url.parse(req.url).query;
+		var req_parse = url.parse(req.url);
+		var req_query = req_parse.query;
+		var path_name = req_parse.pathname;
+		var res_type, res_data={st: 200,data:""};
+
 		if(req_query){
 			var req_token = req_query.match(/token=([^&]*)/);
+			var res_type = req_query.match(/res_type=([^&]*)/);
+			res_type = res_type ? res_type[1]:'';
 		}
 		res.writeHead(200, {"Content-Type": "text/html;charset=utf-8"});
+
 		if(req_token && req_token[1] === server_token){
-			timeGetAccessToken(expires_in);
-			res.end('<h1 style="position:absolute;color:green;text-align:center;padding-top:18%;top:0;bottom:0;left:0;right:0;">wex数据文件已更新!</h1>');
+			if(path_name == "/"){
+				timeGetAccessToken(expires_in);
+				res_data.data = "wex数据文件已更新!";
+			}else if(path_name == "/resetConf"){
+				getConfig(timeGetAccessToken);
+				res_data.data = "重置配置成功!";
+			}else{
+				res_data = {st: 404, data:"非法请求!"}
+			}
 		}else{
-			res.end('<h1 style="position:absolute;color:red;text-align:center;padding-top:18%;top:0;bottom:0;left:0;right:0;">非法的请求!</h1>');
+			res_data = {st: 404, data:"非法请求!"}
 		}
+		res.end(getResponseContent(res_data, res_type));
 	}).listen(run_port, function(){
 		console.log("wex_back_task server runing port "+run_port+"！");
 	});
 }
 
+//设置操作结果
+function getResponseContent(data, type){
+	if(type=='html'){
+		if(data.st == 200){
+			return '<h1 style="position:absolute;color:green;text-align:center;padding-top:18%;top:0;bottom:0;left:0;right:0;">'+data.data+'</h1>';
+		}else{
+			return '<h1 style="position:absolute;color:red;text-align:center;padding-top:18%;top:0;bottom:0;left:0;right:0;">'+data.data+'</h1>';
+		}
+	}else{
+		return JSON.stringify(data);
+	}
+}
+
+//更新access_token时通知变化
+function notifyOther(new_access_token){
+	notify_urls.forEach((val)=>{
+		http.get(val+"?set_accessToken_token="+new Buffer(set_accessToken_token).toString('base64')+"&new_access_token="+new Buffer(new_access_token).toString('base64'), (res)=>{
+			res.setEncoding('utf-8');
+			res.on("data", (chunk)=>{
+				try{
+					if(JSON.parse(chunk).st != 200){
+						writeLog(val+"\t同步通知失败!");
+					}
+				}catch(e){
+					writeLog(val+"\t同步通知失败!");
+				}
+			})
+		})
+	})
+}
+
+//以更新的方式写json文件
 function updateFile(file_path, data, callback){
 	fs.readFile(file_path, function(err, buffer){
 		if(err){
@@ -121,6 +172,37 @@ function updateFile(file_path, data, callback){
 			   callback(err)
 			});
 		}
+	})
+}
+
+//写入log；大于log_file_byte字节时自动清除
+function writeLog(data){
+	var log_file = './log.txt';
+	var date_time = new Date().toLocaleString();
+	fs.readFile(log_file,'utf-8', function(err, buffer){
+        if(err){
+        	console.log(err);
+        }else{
+        	if(buffer.length > log_file_byte){
+        		fs.writeFile(log_file, date_time+"\t\t"+"\t日志清除!"+"\r\n\r\n", {flag: 'w'}, function (err) {
+				   if(err){
+				   	 	console.log(err)
+				   }else{
+				   		fs.writeFile(log_file, date_time+"\t\t"+data+"\r\n", {flag: 'a'}, function (err) {
+						   if(err){
+						   		console.log(err)
+						   }
+						});
+				   }
+				});
+        	}else{
+        		fs.writeFile(log_file, date_time+"\t\t"+data+"\r\n", {flag: 'a'}, function (err) {
+        			if(err){
+        				console.log(err)
+        			}
+				});
+        	}
+        }
 	})
 }
 
