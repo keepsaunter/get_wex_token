@@ -138,18 +138,25 @@ function getResponseContent(data, type){
 //更新access_token时通知变化
 function notifyOther(new_access_token){
 	notify_urls.forEach((val)=>{
-		http.get(val+"?set_accessToken_token="+new Buffer(set_accessToken_token).toString('base64')+"&new_access_token="+new Buffer(new_access_token).toString('base64'), (res)=>{
-			res.setEncoding('utf-8');
-			res.on("data", (chunk)=>{
-				try{
-					if(JSON.parse(chunk).st != 200){
-						writeLog(val+"\t同步通知失败!");
+		try{
+			var req = http.get(val+"?set_accessToken_token="+new Buffer(set_accessToken_token).toString('base64')+"&new_access_token="+new Buffer(new_access_token).toString('base64'), (res)=>{
+				res.setEncoding('utf-8');
+				res.on("data", (chunk)=>{
+					try{
+						if(JSON.parse(chunk).st != 200){
+							writeLog(val+"\t同步通知失败!");
+						}
+					}catch(e){
+						throw(e);
 					}
-				}catch(e){
-					writeLog(val+"\t同步通知失败!");
-				}
+				})
+			}).on("error", function(e){
+				req.destroy();
+				writeLog(val+"\t同步通知失败!");
 			})
-		})
+		}catch(e){
+			writeLog(val+"\t同步通知失败!");
+		}
 	})
 }
 
