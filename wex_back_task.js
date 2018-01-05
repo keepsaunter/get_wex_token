@@ -147,7 +147,7 @@ function notifyOther(new_access_token){
 							writeLog(val+"\t同步通知失败!");
 						}
 					}catch(e){
-						throw(e);
+						writeLog(val+"\t同步通知失败!");
 					}
 				})
 			}).on("error", function(e){
@@ -155,7 +155,7 @@ function notifyOther(new_access_token){
 				writeLog(val+"\t同步通知失败!");
 			})
 		}catch(e){
-			writeLog(val+"\t同步通知失败!");
+			
 		}
 	})
 }
