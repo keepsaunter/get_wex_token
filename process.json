@@ -1,0 +1,9 @@
+{
+  "apps": [{
+        "name": "get_wex_token",
+        "script": "wex_back_task.js",
+        "out_file": "/var/pm2log/get_wex_token/outlog/log.log",
+        "error_file": "/var/pm2log/get_wex_token/errlog/log.log",
+        "log_date_format": "YYYY-MM-DD HH:mm Z"
+  }]
+}
